@@ -4,6 +4,7 @@ Uso:
     python gerar_planilha.py            # gera a versão com exemplo e a em branco
 """
 import datetime as dt
+import os
 import sys
 
 from openpyxl import Workbook
@@ -12,7 +13,8 @@ from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.series import DataPoint
 from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
+from openpyxl.workbook.protection import WorkbookProtection
 from openpyxl.worksheet.datavalidation import DataValidation
 
 # ---------------------------------------------------------------- estilo
@@ -194,7 +196,7 @@ def construir(com_exemplo: bool, caminho: str):
     r_estr = lista(listas, 5, ESTRATEGIAS, "Estratégia")
     for col in "ABCDE":
         listas.column_dimensions[col].width = 34
-    listas.sheet_state = "hidden"
+    listas.sheet_state = "veryHidden"  # não aparece em "Reexibir"
 
     # ================================================================ CONTAS
     ws = contas
@@ -449,7 +451,7 @@ def construir(com_exemplo: bool, caminho: str):
     subtitulo(ws, "B3:R3", "Mostra em que ordem pagar e em que mês cada conta fica quitada, usando o valor que você pode pagar por mês.")
 
     card(ws, "B4:C4", "B5:C5", "VALOR POR MÊS (do Painel)", "=N(Painel!H6)", LILAS, MOEDA, size=12)
-    card(ws, "D4:F4", "D5:F5", "✎ COMEÇAR EM", dt.date(2026, 11, 1), LILAS, MES_ANO, value_bg=INPUT, size=12)
+    card(ws, "D4:F4", "D5:F5", "✎ COMEÇAR EM", "=DATE(YEAR(TODAY()),MONTH(TODAY())+1,1)", LILAS, MES_ANO, value_bg=INPUT, size=12)
     ws.merge_cells("G4:I4")
     ws["G4"] = "✎ ESTRATÉGIA"
     ws["G4"].font = Font(name="Courier New", size=8, color="444444")
@@ -579,6 +581,8 @@ def construir(com_exemplo: bool, caminho: str):
         ("★", "Células brancas/creme = você preenche. Células cinzas = fórmulas, não precisa mexer."),
         ("★", "Para começar do zero, apague os exemplos: nas abas Contas e Pagamentos, apague só as células brancas "
               "(não as cinzas)."),
+        ("★", "As fórmulas são protegidas para não serem apagadas sem querer: só as células brancas/creme "
+              "aceitam digitação. Se aparecer um aviso ao editar, é porque aquela célula calcula sozinha."),
         ("★", "Google Sheets: Arquivo › Importar › Fazer upload deste arquivo. Funciona no celular e no computador."),
         ("★", "Negociando? Use a coluna Negociação e as Observações para lembrar o que foi combinado com cada credor."),
     ]
@@ -597,13 +601,99 @@ def construir(com_exemplo: bool, caminho: str):
         w.page_setup.fitToHeight = 0
         w.sheet_properties.pageSetUpPr.fitToPage = True
 
+    # proteção: só as células de preenchimento ficam liberadas; fórmulas travadas e ocultas
+    entradas = {
+        painel: ["B6:C6", "E6:F6", "H6:I6"],
+        contas: [f"C{C0}:E{C1}", f"G{C0}:H{C1}", f"L{C0}:L{C1}", f"N{C0}:O{C1}"],
+        pag: [f"B{P0}:F{P1}"],
+        plano: ["D5:F5", "J4:K5"],
+        como: [],
+    }
+    proteger(wb, entradas, os.environ.get("PLANILHA_SENHA") or None)
+
     # ordem das abas e aba ativa
     wb.active = 0
     wb.save(caminho)
 
 
+def proteger(wb, entradas, senha):
+    """Trava todas as abas, deixando livres só as células de entrada.
+
+    Células com fórmula ficam ocultas (a fórmula não aparece na barra). A senha vem da
+    variável de ambiente PLANILHA_SENHA e não fica gravada neste script.
+    """
+    travada = Protection(locked=True, hidden=True)
+    livre = Protection(locked=False, hidden=False)
+    for ws, faixas in entradas.items():
+        for row in ws.iter_rows():
+            for c in row:
+                if isinstance(c.value, str) and c.value.startswith("="):
+                    c.protection = travada
+        for faixa in faixas:
+            for row in ws[faixa]:
+                for c in row:
+                    c.protection = livre
+        p = ws.protection
+        p.sheet = True
+        if senha:
+            p.password = senha
+        # permite selecionar, mexer na largura das colunas e usar os menus de lista
+        p.selectLockedCells = False
+        p.selectUnlockedCells = False
+        p.formatColumns = False
+        p.formatRows = False
+    listas = wb["Listas"]
+    listas.protection.sheet = True
+    if senha:
+        listas.protection.password = senha
+    wb.security = WorkbookProtection(lockStructure=True)
+    if senha:
+        wb.security.workbookPassword = senha
+
+
+def finalizar(caminho, senha):
+    """Reaplica a trava da estrutura e oculta de vez a aba Listas.
+
+    O recálculo pelo LibreOffice (que grava os valores das fórmulas no arquivo) apaga a
+    proteção da pasta de trabalho; aqui ela é recolocada direto no XML, sem perder os valores.
+    """
+    import re
+    import shutil
+    import tempfile
+    import zipfile
+    from openpyxl.utils.protection import hash_password
+
+    attrs = 'lockStructure="1"' + (f' workbookPassword="{hash_password(senha)}"' if senha else "")
+    tmp = tempfile.mktemp(suffix=".xlsx")
+    with zipfile.ZipFile(caminho) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "xl/workbook.xml":
+                xml = data.decode("utf-8")
+                xml = re.sub(r"<workbookProtection[^>]*/>", "", xml)
+                xml = re.sub(r"(<workbook\b[^>]*>)", r"\1", xml, count=1)
+                # workbookProtection vem logo antes de <bookViews>
+                xml = xml.replace("<bookViews>", f"<workbookProtection {attrs}/><bookViews>", 1)
+                xml = re.sub(r'(<sheet name="Listas"[^>]*?)state="hidden"', r'\1state="veryHidden"', xml)
+                data = xml.encode("utf-8")
+            zout.writestr(item, data)
+    shutil.move(tmp, caminho)
+
+
 if __name__ == "__main__":
-    base = sys.argv[1] if len(sys.argv) > 1 else "."
-    construir(True, f"{base}/Organizador_Contas_Atrasadas_EXEMPLO.xlsx")
-    construir(False, f"{base}/Organizador_Contas_Atrasadas_EM_BRANCO.xlsx")
+    # 1) python gerar_planilha.py            -> gera os arquivos
+    # 2) recalcule cada .xlsx (ex.: scripts/recalc.py do LibreOffice)
+    # 3) python gerar_planilha.py --finalizar -> recoloca a trava da estrutura
+    # A senha vem de PLANILHA_SENHA (opcional).
+    senha = os.environ.get("PLANILHA_SENHA") or None
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    base = args[0] if args else "."
+    arquivos = (f"{base}/Organizador_Contas_Atrasadas_EXEMPLO.xlsx",
+                f"{base}/Organizador_Contas_Atrasadas_EM_BRANCO.xlsx")
+    if "--finalizar" in sys.argv:
+        for a in arquivos:
+            finalizar(a, senha)
+    else:
+        construir(True, arquivos[0])
+        construir(False, arquivos[1])
     print("ok")

@@ -4,7 +4,12 @@ Planilha (funciona no Google Sheets e no Excel) para ver quanto você deve, qual
 
 - `Organizador_Contas_Atrasadas_EXEMPLO.xlsx` – preenchida com dados de exemplo.
 - `Organizador_Contas_Atrasadas_EM_BRANCO.xlsx` – pronta para usar/vender.
-- `gerar_planilha.py` – script que gera as duas versões (`python gerar_planilha.py`).
+- `proteger-google-sheets.gs` – trava as fórmulas no Google Sheets (Extensões › Apps Script).
+- `Como_acessar_sua_planilha.pdf` – instruções para quem comprar.
+- `GUIA_DE_VENDA.md` – passo a passo para vender na Kiwify.
+- `gerar_planilha.py` / `gerar_pdf_acesso.py` – scripts que geram os arquivos.
+
+As fórmulas vêm protegidas: só as células brancas/creme aceitam digitação.
 
 ## Abas
 | Aba | O que faz |
