@@ -617,6 +617,8 @@ def construir(com_exemplo: bool, caminho: str, dados=None):
         plano: ["D5:F5", "J4:K5"],
         como: [],
     }
+    if dados.get("extra"):  # abas extras (ex.: agenda pessoal) antes de proteger
+        dados["extra"](wb)
     proteger(wb, entradas, os.environ.get("PLANILHA_SENHA") or None)
 
     # ordem das abas e aba ativa
