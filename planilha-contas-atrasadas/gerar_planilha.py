@@ -175,7 +175,15 @@ EXEMPLO_PAG = [
 
 
 # ---------------------------------------------------------------- construção
-def construir(com_exemplo: bool, caminho: str):
+def construir(com_exemplo: bool, caminho: str, dados=None):
+    """dados (opcional): {"nome", "renda", "valor_mes", "contas": [...], "pagamentos": [...]}
+    no mesmo formato de EXEMPLO_CONTAS / EXEMPLO_PAG, para gerar uma planilha já preenchida."""
+    if dados is None and com_exemplo:
+        dados = {"nome": "Ana", "renda": 4500, "valor_mes": 1200,
+                 "contas": EXEMPLO_CONTAS, "pagamentos": EXEMPLO_PAG}
+    dados = dados or {}
+    lista_contas = dados.get("contas", [])
+    lista_pag = dados.get("pagamentos", [])
     wb = Workbook()
     painel = wb.active
     painel.title = "Painel"
@@ -214,7 +222,7 @@ def construir(com_exemplo: bool, caminho: str):
 
     for r in range(C0, C1 + 1):
         i = r - C0
-        ex = EXEMPLO_CONTAS[i] if com_exemplo and i < len(EXEMPLO_CONTAS) else None
+        ex = lista_contas[i] if i < len(lista_contas) else None
         ws[f"B{r}"] = f'=IF(C{r}="","",ROW()-{C0 - 1})'
         if ex:
             ws[f"C{r}"], ws[f"D{r}"], ws[f"E{r}"], ws[f"G{r}"], ws[f"H{r}"] = ex[0], ex[1], ex[2], ex[3], ex[4]
@@ -290,8 +298,8 @@ def construir(com_exemplo: bool, caminho: str):
     ws.freeze_panes = "B6"
     for r in range(P0, P1 + 1):
         i = r - P0
-        if com_exemplo and i < len(EXEMPLO_PAG):
-            e = EXEMPLO_PAG[i]
+        if i < len(lista_pag):
+            e = lista_pag[i]
             ws[f"B{r}"], ws[f"C{r}"], ws[f"D{r}"], ws[f"E{r}"] = e
         for col in "BCDEF":
             style(ws[f"{col}{r}"], h="center" if col in "BE" else ("right" if col == "D" else "left"))
@@ -316,9 +324,9 @@ def construir(com_exemplo: bool, caminho: str):
     ws["B3"].font = f(italic=True, size=9, color="777777")
     ws["B3"].alignment = Alignment(horizontal="center")
 
-    card(ws, "B5:C5", "B6:C6", "✎ SEU NOME", "Ana" if com_exemplo else None, LILAS, value_bg=INPUT)
-    card(ws, "E5:F5", "E6:F6", "✎ RENDA MENSAL", 4500 if com_exemplo else None, LILAS, MOEDA, value_bg=INPUT)
-    card(ws, "H5:I5", "H6:I6", "✎ POSSO PAGAR POR MÊS", 1200 if com_exemplo else None, LILAS, MOEDA, value_bg=INPUT)
+    card(ws, "B5:C5", "B6:C6", "✎ SEU NOME", dados.get("nome"), LILAS, value_bg=INPUT)
+    card(ws, "E5:F5", "E6:F6", "✎ RENDA MENSAL", dados.get("renda"), LILAS, MOEDA, value_bg=INPUT)
+    card(ws, "H5:I5", "H6:I6", "✎ POSSO PAGAR POR MÊS", dados.get("valor_mes"), LILAS, MOEDA, value_bg=INPUT)
     ws["H5"].comment = Comment("Quanto sobra por mês, depois das despesas da casa, para pagar dívidas. "
                                "É esse valor que monta o Plano de Quitação.", "Organizador")
 
